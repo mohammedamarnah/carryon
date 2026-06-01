@@ -12,7 +12,7 @@ func humanizeAge(t, now time.Time) string {
 	d := now.Sub(t)
 	switch {
 	case d < time.Minute:
-		return "just now"
+		return "now"
 	case d < time.Hour:
 		return fmt.Sprintf("%dm", int(d.Minutes()))
 	case d < 24*time.Hour:

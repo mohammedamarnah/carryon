@@ -79,62 +79,197 @@ func (m Model) toolLabel() string {
 	}
 }
 
+// --- teal theme ---
+
+var (
+	colTeal       = lipgloss.Color("#14B8A6")
+	colTealBright = lipgloss.Color("#5EEAD4")
+	colTealDim    = lipgloss.Color("#0F766E")
+	colMuted      = lipgloss.AdaptiveColor{Light: "#6B7280", Dark: "#94A3B8"}
+	colFg         = lipgloss.AdaptiveColor{Light: "#111827", Dark: "#E5E7EB"}
+	colSelFg      = lipgloss.Color("#042F2E") // dark text that reads on a teal background
+	colWarn       = lipgloss.Color("#F59E0B")
+
+	styTitle    = lipgloss.NewStyle().Foreground(colTealBright).Bold(true)
+	styCount    = lipgloss.NewStyle().Foreground(colMuted)
+	stySearch   = lipgloss.NewStyle().Foreground(colTealBright).Bold(true)
+	styTool     = lipgloss.NewStyle().Foreground(colTeal).Bold(true)
+	styProj     = lipgloss.NewStyle().Foreground(colFg)
+	styAge      = lipgloss.NewStyle().Foreground(colMuted)
+	styBranch   = lipgloss.NewStyle().Foreground(colTealDim)
+	styRowTitle = lipgloss.NewStyle().Foreground(colFg)
+	stySelected = lipgloss.NewStyle().Background(colTeal).Foreground(colSelFg).Bold(true)
+	styMore     = lipgloss.NewStyle().Foreground(colTealDim).Italic(true)
+	styPrevHdr  = lipgloss.NewStyle().Foreground(colTeal).Bold(true)
+	styPrev     = lipgloss.NewStyle().Foreground(colFg)
+	styWarn     = lipgloss.NewStyle().Foreground(colWarn).Bold(true)
+	styFooter   = lipgloss.NewStyle().Foreground(colMuted)
+
+	styFrame = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colTeal).
+			Padding(0, 1)
+	styRightPane = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, false, false, true).
+			BorderForeground(colTealDim).
+			PaddingLeft(1)
+)
+
 func (m Model) View() string {
 	if m.quitting {
 		return ""
 	}
 	home, _ := os.UserHomeDir()
 
-	header := fmt.Sprintf("carryon — %d conversations  [tool:%s%s]",
-		len(m.filtered), m.toolLabel(), map[bool]string{true: " cwd-only", false: ""}[m.cwdOnly])
+	cwd := ""
+	if m.cwdOnly {
+		cwd = " · cwd-only"
+	}
+	header := styTitle.Render("carryon") + "  " +
+		styCount.Render(fmt.Sprintf("%d conversations · tool: %s%s", len(m.filtered), m.toolLabel(), cwd))
 	if m.searching {
-		header += "\nsearch: " + m.search
+		header += "\n" + stySearch.Render("search: "+m.search+"▏")
 	}
 
-	list := m.listView(home)
-
-	footer := "↑↓ move  ↵ resume  / search  t tool  . cwd-only  q quit"
-
-	left := lipgloss.NewStyle().Width(m.leftWidth()).Render(list)
-	right := lipgloss.NewStyle().Width(m.rightWidth()).Render(m.previewHeader(home) + "\n\n" + m.previewText)
+	bodyH := m.bodyHeight()
+	left := lipgloss.NewStyle().Width(m.leftWidth()).Height(bodyH).Render(m.listView(home))
+	preview := clampLines(m.previewHeader(home)+"\n\n"+styPrev.Render(m.previewText), bodyH)
+	right := styRightPane.Width(m.rightWidth()).Height(bodyH).Render(preview)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	return header + "\n\n" + body + "\n\n" + footer
+	footer := styFooter.Render("↑↓ move · ↵ resume · / search · t tool · . cwd-only · q quit")
+
+	content := lipgloss.JoinVertical(lipgloss.Left, header, "", body, "", footer)
+	return styFrame.Width(m.innerWidth()).Render(content)
 }
 
 // listView renders only the rows visible in the current viewport window,
 // with "more" indicators above/below when the list is taller than the screen.
 func (m Model) listView(home string) string {
 	if len(m.filtered) == 0 {
-		return "\n  No matches.\n"
+		return styMore.Render("\n  No matches.")
 	}
 	start, end := m.windowBounds()
+	w := m.leftWidth()
 	var b strings.Builder
 	if start > 0 {
-		fmt.Fprintf(&b, "  ↑ %d more\n", start)
+		b.WriteString(styMore.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
 	}
 	for i := start; i < end; i++ {
-		c := m.all[m.filtered[i]]
-		cursor := "  "
-		if i == m.cursor {
-			cursor = "> "
-		}
-		fmt.Fprintf(&b, "%s%-6s  %-16s  %-5s  %-8s  %s\n",
-			cursor, c.Tool.String(), shortenPath(c.Cwd, home),
-			humanizeAge(c.Modified, time.Now()), c.Branch, c.Title)
+		b.WriteString(m.renderRow(m.all[m.filtered[i]], home, i == m.cursor, w))
+		b.WriteByte('\n')
 	}
 	if end < len(m.filtered) {
-		fmt.Fprintf(&b, "  ↓ %d more\n", len(m.filtered)-end)
+		b.WriteString(styMore.Render(fmt.Sprintf("  ↓ %d more", len(m.filtered)-end)))
 	}
 	return b.String()
 }
 
-// listHeight is how many conversation rows fit, leaving room for the header,
-// footer, and scroll indicators. Returns the full count when height is unknown.
+// renderRow formats one conversation line, fit to width. The selected row gets a
+// full-width teal highlight; others get per-column teal accents.
+func (m Model) renderRow(c model.Conversation, home string, selected bool, width int) string {
+	const (
+		wTool   = 6
+		wProj   = 16
+		wAge    = 4
+		wBranch = 8
+		// marker(2) + 4 two-space gaps + the fixed columns
+		fixed = 2 + wTool + 2 + wProj + 2 + wAge + 2 + wBranch + 2
+	)
+	titleW := width - fixed
+	if titleW < 4 {
+		titleW = 4
+	}
+	marker := "  "
+	if selected {
+		marker = "› "
+	}
+	tool := padTrunc(c.Tool.String(), wTool)
+	proj := padTrunc(shortenPath(c.Cwd, home), wProj)
+	age := padTrunc(humanizeAge(c.Modified, time.Now()), wAge)
+	branch := padTrunc(c.Branch, wBranch)
+	title := padTrunc(c.Title, titleW)
+
+	if selected {
+		plain := marker + tool + "  " + proj + "  " + age + "  " + branch + "  " + title
+		return stySelected.Render(padTrunc(plain, width))
+	}
+	return marker +
+		styTool.Render(tool) + "  " +
+		styProj.Render(proj) + "  " +
+		styAge.Render(age) + "  " +
+		styBranch.Render(branch) + "  " +
+		styRowTitle.Render(title)
+}
+
+func (m Model) previewHeader(home string) string {
+	c := m.Current()
+	if c == nil {
+		return ""
+	}
+	hdr := styPrevHdr.Render(fmt.Sprintf("%s · %s · %s",
+		c.Tool.String(), c.Cwd, humanizeAge(c.Modified, time.Now())))
+	if _, err := os.Stat(c.Cwd); err != nil {
+		hdr += styWarn.Render("  ⚠ path missing")
+	}
+	return hdr
+}
+
+// --- layout sizing (accounts for the rounded frame) ---
+
+func (m Model) frameWidth() int {
+	if m.width <= 0 {
+		return 100
+	}
+	return m.width
+}
+
+// innerWidth is the content width inside the frame (border 2 + padding 2).
+func (m Model) innerWidth() int {
+	w := m.frameWidth() - 4
+	if w < 24 {
+		w = 24
+	}
+	return w
+}
+
+// leftWidth is the list pane width; the preview pane reserves 2 columns for its
+// left border and padding.
+func (m Model) leftWidth() int {
+	w := (m.innerWidth() - 2) * 66 / 100
+	if w < 12 {
+		w = 12
+	}
+	return w
+}
+
+func (m Model) rightWidth() int {
+	w := m.innerWidth() - 2 - m.leftWidth()
+	if w < 10 {
+		w = 10
+	}
+	return w
+}
+
+// bodyHeight is how many lines the list and preview panes occupy.
+func (m Model) bodyHeight() int {
+	overhead := 6 // frame(2) + header(1) + 2 blanks + footer(1)
+	if m.searching {
+		overhead++
+	}
+	h := m.height - overhead
+	if h < 3 {
+		h = 3
+	}
+	return h
+}
+
+// listHeight is how many conversation rows fit, reserving 2 lines for the
+// scroll indicators.
 func (m Model) listHeight() int {
-	h := m.height - 8
+	h := m.bodyHeight() - 2
 	if h < 1 {
-		return len(m.filtered)
+		h = 1
 	}
 	return h
 }
@@ -161,31 +296,32 @@ func (m Model) windowBounds() (int, int) {
 	return start, end
 }
 
-func (m Model) previewHeader(home string) string {
-	c := m.Current()
-	if c == nil {
+// padTrunc fits s to exactly w columns (rune-approximate), truncating with an
+// ellipsis or right-padding with spaces.
+func padTrunc(s string, w int) string {
+	if w <= 0 {
 		return ""
 	}
-	warn := ""
-	if _, err := os.Stat(c.Cwd); err != nil {
-		warn = "  ⚠ path missing"
+	r := []rune(s)
+	if len(r) > w {
+		if w == 1 {
+			return "…"
+		}
+		return string(r[:w-1]) + "…"
 	}
-	return fmt.Sprintf("%s · %s · %s%s",
-		c.Tool.String(), c.Cwd, humanizeAge(c.Modified, time.Now()), warn)
+	return s + strings.Repeat(" ", w-len(r))
 }
 
-func (m Model) leftWidth() int {
-	if m.width <= 0 {
-		return 60
+// clampLines keeps at most n lines of s.
+func clampLines(s string, n int) string {
+	if n < 1 {
+		n = 1
 	}
-	return m.width * 6 / 10
-}
-
-func (m Model) rightWidth() int {
-	if m.width <= 0 {
-		return 40
+	lines := strings.Split(s, "\n")
+	if len(lines) > n {
+		lines = lines[:n]
 	}
-	return m.width - m.leftWidth() - 2
+	return strings.Join(lines, "\n")
 }
 
 // Selected returns the chosen conversation, or nil if the user quit.

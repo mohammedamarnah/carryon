@@ -11,7 +11,7 @@ func TestHumanizeAge(t *testing.T) {
 		ago  time.Duration
 		want string
 	}{
-		{30 * time.Second, "just now"},
+		{30 * time.Second, "now"},
 		{5 * time.Minute, "5m"},
 		{3 * time.Hour, "3h"},
 		{2 * 24 * time.Hour, "2d"},
