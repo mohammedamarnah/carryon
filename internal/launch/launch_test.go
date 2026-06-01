@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"carryon/internal/model"
+	"github.com/mohammedamarnah/carryon/internal/model"
 )
 
 // fakeInfo implements os.FileInfo for tests.

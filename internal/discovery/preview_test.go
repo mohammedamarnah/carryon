@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"carryon/internal/model"
+	"github.com/mohammedamarnah/carryon/internal/model"
 )
 
 func TestLoadPreviewClaude(t *testing.T) {

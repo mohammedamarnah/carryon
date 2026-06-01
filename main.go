@@ -6,10 +6,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"carryon/internal/discovery"
-	"carryon/internal/launch"
-	"carryon/internal/model"
-	"carryon/internal/tui"
+	"github.com/mohammedamarnah/carryon/internal/discovery"
+	"github.com/mohammedamarnah/carryon/internal/launch"
+	"github.com/mohammedamarnah/carryon/internal/model"
+	"github.com/mohammedamarnah/carryon/internal/tui"
 )
 
 const previewTurns = 12

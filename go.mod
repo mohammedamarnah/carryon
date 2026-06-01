@@ -1,4 +1,4 @@
-module carryon
+module github.com/mohammedamarnah/carryon
 
 go 1.26.2
 

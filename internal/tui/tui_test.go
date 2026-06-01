@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"carryon/internal/model"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mohammedamarnah/carryon/internal/model"
 )
 
 func sampleConvs() []model.Conversation {

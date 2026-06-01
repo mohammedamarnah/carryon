@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"carryon/internal/model"
+	"github.com/mohammedamarnah/carryon/internal/model"
 )
 
 // Discover reads the user's default Claude and Codex stores under $HOME.

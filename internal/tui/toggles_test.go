@@ -3,8 +3,8 @@ package tui
 import (
 	"testing"
 
-	"carryon/internal/model"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mohammedamarnah/carryon/internal/model"
 )
 
 func TestToolFilterCycle(t *testing.T) {

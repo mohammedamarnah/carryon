@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"carryon/internal/model"
+	"github.com/mohammedamarnah/carryon/internal/model"
 )
 
 const previewTextRunes = 200

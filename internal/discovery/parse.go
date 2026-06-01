@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"carryon/internal/model"
+	"github.com/mohammedamarnah/carryon/internal/model"
 )
 
 const (

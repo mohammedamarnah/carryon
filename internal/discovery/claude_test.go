@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"carryon/internal/model"
+	"github.com/mohammedamarnah/carryon/internal/model"
 )
 
 func writeFile(t *testing.T, path, content string) {

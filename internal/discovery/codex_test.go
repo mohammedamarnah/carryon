@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"carryon/internal/model"
+	"github.com/mohammedamarnah/carryon/internal/model"
 )
 
 func TestParseCodexFile(t *testing.T) {

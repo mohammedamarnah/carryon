@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"carryon/internal/model"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mohammedamarnah/carryon/internal/model"
 )
 
 type toolFilter int
