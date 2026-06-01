@@ -1,8 +1,14 @@
 package tui
 
 import (
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
 	"carryon/internal/model"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type toolFilter int
@@ -46,8 +52,90 @@ func New(convs []model.Conversation, currentDir string, loadPreview func(model.C
 
 func (m Model) Init() tea.Cmd { return nil }
 
-// View satisfies tea.Model; the full implementation is added in Task 12.
-func (m Model) View() string { return "" }
+func (m *Model) currentPreview() string {
+	if len(m.filtered) == 0 {
+		return ""
+	}
+	if m.previewIdx != m.cursor {
+		m.previewText = m.loadPreview(m.all[m.filtered[m.cursor]])
+		m.previewIdx = m.cursor
+	}
+	return m.previewText
+}
+
+func (m Model) toolLabel() string {
+	switch m.tool {
+	case filterClaude:
+		return "claude"
+	case filterCodex:
+		return "codex"
+	default:
+		return "all"
+	}
+}
+
+func (m Model) View() string {
+	if m.quitting {
+		return ""
+	}
+	home, _ := os.UserHomeDir()
+
+	header := fmt.Sprintf("carryon — %d conversations  [tool:%s%s]",
+		len(m.filtered), m.toolLabel(), map[bool]string{true: " cwd-only", false: ""}[m.cwdOnly])
+	if m.searching {
+		header += "\nsearch: " + m.search
+	}
+
+	var list strings.Builder
+	if len(m.filtered) == 0 {
+		list.WriteString("\n  No matches.\n")
+	}
+	for i, idx := range m.filtered {
+		c := m.all[idx]
+		cursor := "  "
+		if i == m.cursor {
+			cursor = "> "
+		}
+		fmt.Fprintf(&list, "%s%-6s  %-16s  %-5s  %-8s  %s\n",
+			cursor, c.Tool.String(), shortenPath(c.Cwd, home),
+			humanizeAge(c.Modified, time.Now()), c.Branch, c.Title)
+	}
+
+	footer := "↑↓ move  ↵ resume  / search  t tool  . cwd-only  q quit"
+
+	left := lipgloss.NewStyle().Width(m.leftWidth()).Render(list.String())
+	right := lipgloss.NewStyle().Width(m.rightWidth()).Render(m.previewHeader(home) + "\n\n" + m.currentPreview())
+	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+
+	return header + "\n\n" + body + "\n\n" + footer
+}
+
+func (m Model) previewHeader(home string) string {
+	c := m.Current()
+	if c == nil {
+		return ""
+	}
+	warn := ""
+	if _, err := os.Stat(c.Cwd); err != nil {
+		warn = "  ⚠ path missing"
+	}
+	return fmt.Sprintf("%s · %s · %s%s",
+		c.Tool.String(), c.Cwd, humanizeAge(c.Modified, time.Now()), warn)
+}
+
+func (m Model) leftWidth() int {
+	if m.width <= 0 {
+		return 60
+	}
+	return m.width * 6 / 10
+}
+
+func (m Model) rightWidth() int {
+	if m.width <= 0 {
+		return 40
+	}
+	return m.width - m.leftWidth() - 2
+}
 
 // Selected returns the chosen conversation, or nil if the user quit.
 func (m Model) Selected() *model.Conversation { return m.selected }
