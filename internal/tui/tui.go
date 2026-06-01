@@ -89,6 +89,8 @@ var (
 	colFg         = lipgloss.AdaptiveColor{Light: "#111827", Dark: "#E5E7EB"}
 	colSelFg      = lipgloss.Color("#042F2E") // dark text that reads on a teal background
 	colWarn       = lipgloss.Color("#F59E0B")
+	colUser       = lipgloss.Color("#5EEAD4") // bright teal — user turns
+	colAsst       = lipgloss.Color("#C4B5FD") // soft violet — assistant turns
 
 	styTitle    = lipgloss.NewStyle().Foreground(colTealBright).Bold(true)
 	styCount    = lipgloss.NewStyle().Foreground(colMuted)
@@ -103,6 +105,8 @@ var (
 	styPrevHdr  = lipgloss.NewStyle().Foreground(colTeal).Bold(true)
 	styPrev     = lipgloss.NewStyle().Foreground(colFg)
 	styWarn     = lipgloss.NewStyle().Foreground(colWarn).Bold(true)
+	styRoleUser = lipgloss.NewStyle().Foreground(colUser).Bold(true)
+	styRoleAsst = lipgloss.NewStyle().Foreground(colAsst).Bold(true)
 	styFooter   = lipgloss.NewStyle().Foreground(colMuted)
 
 	stySep    = lipgloss.NewStyle().Foreground(colTealDim)
@@ -273,9 +277,36 @@ func (m Model) previewLines(home string, w, height int) []string {
 		}
 		lines = append(lines, "")
 	}
-	lines = append(lines, wrap(m.previewText, styPrev)...)
+	for _, line := range strings.Split(m.previewText, "\n") {
+		lines = append(lines, previewTurnLines(line, w)...)
+	}
 
 	return fitBlock(lines, w, height)
+}
+
+// previewTurnLines wraps one transcript line to w columns and colors a leading
+// "user:" / "assistant:" role label. The text is wrapped while plain, then each
+// final line is styled, so widths stay correct.
+func previewTurnLines(s string, w int) []string {
+	wrapped := strings.Split(lipgloss.NewStyle().Width(w).Render(s), "\n")
+
+	var roleStyle lipgloss.Style
+	var label string
+	switch {
+	case strings.HasPrefix(s, "user: "):
+		roleStyle, label = styRoleUser, "user:"
+	case strings.HasPrefix(s, "assistant: "):
+		roleStyle, label = styRoleAsst, "assistant:"
+	}
+
+	for i, ln := range wrapped {
+		if i == 0 && label != "" && len(ln) >= len(label) {
+			wrapped[i] = roleStyle.Render(label) + styPrev.Render(ln[len(label):])
+		} else {
+			wrapped[i] = styPrev.Render(ln)
+		}
+	}
+	return wrapped
 }
 
 // --- layout sizing (accounts for the rounded frame) ---
