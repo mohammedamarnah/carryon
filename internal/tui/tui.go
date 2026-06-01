@@ -47,20 +47,25 @@ func New(convs []model.Conversation, currentDir string, loadPreview func(model.C
 		previewIdx:  -1,
 	}
 	m.recompute()
+	m.refreshPreview()
 	return m
 }
 
 func (m Model) Init() tea.Cmd { return nil }
 
-func (m *Model) currentPreview() string {
+// refreshPreview loads the highlighted conversation's preview into the cache if
+// the cursor moved. Called from Update/New (value-receiver paths that persist),
+// never from View, so the cache actually survives across renders.
+func (m *Model) refreshPreview() {
 	if len(m.filtered) == 0 {
-		return ""
+		m.previewText = ""
+		m.previewIdx = -1
+		return
 	}
 	if m.previewIdx != m.cursor {
 		m.previewText = m.loadPreview(m.all[m.filtered[m.cursor]])
 		m.previewIdx = m.cursor
 	}
-	return m.previewText
 }
 
 func (m Model) toolLabel() string {
@@ -86,28 +91,74 @@ func (m Model) View() string {
 		header += "\nsearch: " + m.search
 	}
 
-	var list strings.Builder
+	list := m.listView(home)
+
+	footer := "↑↓ move  ↵ resume  / search  t tool  . cwd-only  q quit"
+
+	left := lipgloss.NewStyle().Width(m.leftWidth()).Render(list)
+	right := lipgloss.NewStyle().Width(m.rightWidth()).Render(m.previewHeader(home) + "\n\n" + m.previewText)
+	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+
+	return header + "\n\n" + body + "\n\n" + footer
+}
+
+// listView renders only the rows visible in the current viewport window,
+// with "more" indicators above/below when the list is taller than the screen.
+func (m Model) listView(home string) string {
 	if len(m.filtered) == 0 {
-		list.WriteString("\n  No matches.\n")
+		return "\n  No matches.\n"
 	}
-	for i, idx := range m.filtered {
-		c := m.all[idx]
+	start, end := m.windowBounds()
+	var b strings.Builder
+	if start > 0 {
+		fmt.Fprintf(&b, "  ↑ %d more\n", start)
+	}
+	for i := start; i < end; i++ {
+		c := m.all[m.filtered[i]]
 		cursor := "  "
 		if i == m.cursor {
 			cursor = "> "
 		}
-		fmt.Fprintf(&list, "%s%-6s  %-16s  %-5s  %-8s  %s\n",
+		fmt.Fprintf(&b, "%s%-6s  %-16s  %-5s  %-8s  %s\n",
 			cursor, c.Tool.String(), shortenPath(c.Cwd, home),
 			humanizeAge(c.Modified, time.Now()), c.Branch, c.Title)
 	}
+	if end < len(m.filtered) {
+		fmt.Fprintf(&b, "  ↓ %d more\n", len(m.filtered)-end)
+	}
+	return b.String()
+}
 
-	footer := "↑↓ move  ↵ resume  / search  t tool  . cwd-only  q quit"
+// listHeight is how many conversation rows fit, leaving room for the header,
+// footer, and scroll indicators. Returns the full count when height is unknown.
+func (m Model) listHeight() int {
+	h := m.height - 8
+	if h < 1 {
+		return len(m.filtered)
+	}
+	return h
+}
 
-	left := lipgloss.NewStyle().Width(m.leftWidth()).Render(list.String())
-	right := lipgloss.NewStyle().Width(m.rightWidth()).Render(m.previewHeader(home) + "\n\n" + m.currentPreview())
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
-
-	return header + "\n\n" + body + "\n\n" + footer
+// windowBounds returns the [start, end) slice of m.filtered to render, keeping
+// the cursor in view.
+func (m Model) windowBounds() (int, int) {
+	lh := m.listHeight()
+	if lh >= len(m.filtered) {
+		return 0, len(m.filtered)
+	}
+	start := 0
+	if m.cursor >= lh {
+		start = m.cursor - lh + 1
+	}
+	end := start + lh
+	if end > len(m.filtered) {
+		end = len(m.filtered)
+		start = end - lh
+	}
+	if start < 0 {
+		start = 0
+	}
+	return start, end
 }
 
 func (m Model) previewHeader(home string) string {
@@ -208,10 +259,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case tea.KeyMsg:
+		var next tea.Model
+		var cmd tea.Cmd
 		if m.searching {
-			return m.updateSearching(msg)
+			next, cmd = m.updateSearching(msg)
+		} else {
+			next, cmd = m.updateBrowsing(msg)
 		}
-		return m.updateBrowsing(msg)
+		nm := next.(Model)
+		nm.refreshPreview()
+		return nm, cmd
 	}
 	return m, nil
 }
