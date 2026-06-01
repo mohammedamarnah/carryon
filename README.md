@@ -4,17 +4,7 @@ One picker for **all** your Claude Code and Codex conversations — resume any o
 
 Both CLIs store their history centrally, but each one's built-in picker only shows sessions started in your current directory. `carryon` reads both stores, lists every conversation in an interactive TUI, and hands off to the native CLI to resume the one you pick — `cd`'d into its original project directory.
 
-```
-╭──────────────────────────────────────────────────────────────────╮
-│ carryon  72 conversations · tool: all                              │
-│                                                                    │
-│ › claude  growth/hootmail3  2d  master  fix the bounce handler │ … │
-│   codex   Downloads         5d          add retry logic to web │ … │
-│   claude  growth/referrals  1w  feat-x  why is the webhook fai │ … │
-│                                                                    │
-│ ↑↓ move · ↵ resume · / search · t tool · . cwd-only · q quit       │
-╰──────────────────────────────────────────────────────────────────╯
-```
+![carryon demo](docs/carryon.gif)
 
 ## Install
 
