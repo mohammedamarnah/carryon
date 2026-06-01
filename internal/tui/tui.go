@@ -571,7 +571,8 @@ func (m Model) updateSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.move(-1)
 	case tea.KeyDown:
 		m.move(1)
-	case tea.KeyRunes:
+	case tea.KeyRunes, tea.KeySpace:
+		// Space arrives as KeySpace (Runes == [' ']), not KeyRunes.
 		m.search += string(msg.Runes)
 		m.recompute()
 	}
