@@ -108,6 +108,89 @@ func parseClaudeFile(path string) (model.Conversation, error) {
 	return conv, nil
 }
 
+// --- Codex JSON shapes ---
+
+type codexLine struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+type codexMeta struct {
+	ID  string `json:"id"`
+	Cwd string `json:"cwd"`
+}
+
+type codexItem struct {
+	Type    string       `json:"type"`
+	Role    string       `json:"role"`
+	Content []codexBlock `json:"content"`
+}
+
+type codexBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+func parseCodexFile(path string) (model.Conversation, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return model.Conversation{}, err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return model.Conversation{}, err
+	}
+
+	conv := model.Conversation{
+		Tool:     model.Codex,
+		Modified: info.ModTime(),
+		Path:     path,
+	}
+
+	sc := newScanner(f)
+	for sc.Scan() {
+		var ln codexLine
+		if err := json.Unmarshal(sc.Bytes(), &ln); err != nil {
+			continue
+		}
+		switch ln.Type {
+		case "session_meta":
+			var meta codexMeta
+			if err := json.Unmarshal(ln.Payload, &meta); err == nil {
+				conv.SessionID = meta.ID
+				conv.Cwd = meta.Cwd
+			}
+		case "response_item":
+			if conv.Title != "" {
+				continue
+			}
+			var item codexItem
+			if err := json.Unmarshal(ln.Payload, &item); err != nil {
+				continue
+			}
+			if item.Type != "message" || item.Role != "user" {
+				continue
+			}
+			for _, b := range item.Content {
+				text := strings.TrimSpace(b.Text)
+				if text != "" && !strings.HasPrefix(text, "<") {
+					conv.Title = firstLineTrunc(text, maxTitleRunes)
+					break
+				}
+			}
+		}
+		if conv.Cwd != "" && conv.Title != "" {
+			break
+		}
+	}
+	if conv.Title == "" {
+		conv.Title = noMessage
+	}
+	return conv, nil
+}
+
 // firstLineTrunc collapses to the first line and truncates to n runes.
 func firstLineTrunc(s string, n int) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
