@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"syscall"
 
 	"carryon/internal/model"
 )
@@ -74,4 +75,13 @@ func resolveDir(cwd string, env Env, warnings *[]string) string {
 	}
 	*warnings = append(*warnings, fmt.Sprintf("project dir %q missing; launching from %s", cwd, wd))
 	return wd
+}
+
+// Exec changes to the spec's directory and replaces the current process with the
+// shell launch command. On success it does not return.
+func Exec(spec Spec) error {
+	if err := os.Chdir(spec.Dir); err != nil {
+		return err
+	}
+	return syscall.Exec(spec.Shell, spec.Argv, os.Environ())
 }

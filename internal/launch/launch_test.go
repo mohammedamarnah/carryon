@@ -16,11 +16,11 @@ type fakeInfo struct {
 }
 
 func (f fakeInfo) Name() string       { return "x" }
-func (f fakeInfo) Size() int64         { return 0 }
-func (f fakeInfo) Mode() fs.FileMode   { return f.mode }
-func (f fakeInfo) ModTime() time.Time  { return time.Time{} }
-func (f fakeInfo) IsDir() bool         { return f.dir }
-func (f fakeInfo) Sys() any            { return nil }
+func (f fakeInfo) Size() int64        { return 0 }
+func (f fakeInfo) Mode() fs.FileMode  { return f.mode }
+func (f fakeInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeInfo) IsDir() bool        { return f.dir }
+func (f fakeInfo) Sys() any           { return nil }
 
 func goodEnv() Env {
 	return Env{
