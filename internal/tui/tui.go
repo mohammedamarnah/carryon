@@ -79,39 +79,64 @@ func (m Model) toolLabel() string {
 	}
 }
 
-// --- teal theme ---
+// --- theme: purple/pink app chrome, per-tool accents (Claude=orange, Codex=teal) ---
 
 var (
-	colTeal       = lipgloss.Color("#14B8A6")
-	colTealBright = lipgloss.Color("#5EEAD4")
-	colTealDim    = lipgloss.Color("#0F766E")
-	colMuted      = lipgloss.AdaptiveColor{Light: "#6B7280", Dark: "#94A3B8"}
-	colFg         = lipgloss.AdaptiveColor{Light: "#111827", Dark: "#E5E7EB"}
-	colSelFg      = lipgloss.Color("#042F2E") // dark text that reads on a teal background
-	colWarn       = lipgloss.Color("#F59E0B")
-	colUser       = lipgloss.Color("#5EEAD4") // bright teal — user turns
-	colAsst       = lipgloss.Color("#C4B5FD") // soft violet — assistant turns
+	// app chrome
+	colApp    = lipgloss.Color("#C084FC") // purple — title, frame, indicators
+	colAppDim = lipgloss.Color("#7C3AED") // deep purple — separators, branch
+	colPink   = lipgloss.Color("#F472B6") // pink — search, user turns
+	colMuted  = lipgloss.AdaptiveColor{Light: "#6B7280", Dark: "#9CA3AF"}
+	colFg     = lipgloss.AdaptiveColor{Light: "#111827", Dark: "#E5E7EB"}
+	colWarn   = lipgloss.Color("#F87171") // red — path missing
 
-	styTitle    = lipgloss.NewStyle().Foreground(colTealBright).Bold(true)
+	// per-tool accents
+	colClaude     = lipgloss.Color("#FB923C") // orange — Claude Code
+	colClaudeText = lipgloss.Color("#431407") // dark text on the orange highlight
+	colCodex      = lipgloss.Color("#2DD4BF") // teal — Codex
+	colCodexText  = lipgloss.Color("#042F2E") // dark text on the teal highlight
+
+	styTitle    = lipgloss.NewStyle().Foreground(colApp).Bold(true)
 	styCount    = lipgloss.NewStyle().Foreground(colMuted)
-	stySearch   = lipgloss.NewStyle().Foreground(colTealBright).Bold(true)
-	styTool     = lipgloss.NewStyle().Foreground(colTeal).Bold(true)
+	stySearch   = lipgloss.NewStyle().Foreground(colPink).Bold(true)
 	styProj     = lipgloss.NewStyle().Foreground(colFg)
 	styAge      = lipgloss.NewStyle().Foreground(colMuted)
-	styBranch   = lipgloss.NewStyle().Foreground(colTealDim)
+	styBranch   = lipgloss.NewStyle().Foreground(colAppDim)
 	styRowTitle = lipgloss.NewStyle().Foreground(colFg)
-	stySelected = lipgloss.NewStyle().Background(colTeal).Foreground(colSelFg).Bold(true)
-	styMore     = lipgloss.NewStyle().Foreground(colTealDim).Italic(true)
-	styPrevHdr  = lipgloss.NewStyle().Foreground(colTeal).Bold(true)
+	styMore     = lipgloss.NewStyle().Foreground(colApp).Italic(true)
 	styPrev     = lipgloss.NewStyle().Foreground(colFg)
 	styWarn     = lipgloss.NewStyle().Foreground(colWarn).Bold(true)
-	styRoleUser = lipgloss.NewStyle().Foreground(colUser).Bold(true)
-	styRoleAsst = lipgloss.NewStyle().Foreground(colAsst).Bold(true)
+	styRoleUser = lipgloss.NewStyle().Foreground(colPink).Bold(true)
+	styRoleAsst = lipgloss.NewStyle().Foreground(colApp).Bold(true)
 	styFooter   = lipgloss.NewStyle().Foreground(colMuted)
 
-	stySep    = lipgloss.NewStyle().Foreground(colTealDim)
-	styBorder = lipgloss.NewStyle().Foreground(colTeal)
+	stySep    = lipgloss.NewStyle().Foreground(colAppDim)
+	styBorder = lipgloss.NewStyle().Foreground(colApp)
+
+	// per-tool tool-name accent (non-selected rows) and preview header
+	styToolClaude = lipgloss.NewStyle().Foreground(colClaude).Bold(true)
+	styToolCodex  = lipgloss.NewStyle().Foreground(colCodex).Bold(true)
+
+	// per-tool selected-row highlight
+	stySelClaude = lipgloss.NewStyle().Background(colClaude).Foreground(colClaudeText).Bold(true)
+	stySelCodex  = lipgloss.NewStyle().Background(colCodex).Foreground(colCodexText).Bold(true)
 )
+
+// toolStyle returns the per-tool accent style (Claude=orange, Codex=teal).
+func toolStyle(t model.Tool) lipgloss.Style {
+	if t == model.Codex {
+		return styToolCodex
+	}
+	return styToolClaude
+}
+
+// selStyle returns the per-tool selected-row highlight style.
+func selStyle(t model.Tool) lipgloss.Style {
+	if t == model.Codex {
+		return stySelCodex
+	}
+	return stySelClaude
+}
 
 func (m Model) View() string {
 	if m.quitting {
@@ -132,7 +157,7 @@ func (m Model) View() string {
 	}
 
 	// Zip the two panes line-by-line at exact widths and height, with a manual
-	// teal separator. This avoids lipgloss's border/padding width ambiguities,
+	// separator. This avoids lipgloss's border/padding width ambiguities,
 	// guaranteeing every body line is exactly innerWidth and there are exactly
 	// bodyH of them — so nothing overflows the frame or the terminal.
 	bodyH := m.bodyHeight()
@@ -149,13 +174,13 @@ func (m Model) View() string {
 		content = append(content, leftLines[i]+sep+rightLines[i])
 	}
 	content = append(content, "", footer)
-	return tealFrame(content, inner)
+	return drawFrame(content, inner)
 }
 
-// tealFrame draws a rounded teal border around the content lines, padding each
+// drawFrame draws a rounded border around the content lines, padding each
 // line to innerWidth. The result is exactly innerWidth+4 columns wide and
 // len(lines)+2 rows tall — no lipgloss border box-model guesswork.
-func tealFrame(lines []string, innerWidth int) string {
+func drawFrame(lines []string, innerWidth int) string {
 	bar := strings.Repeat("─", innerWidth+2)
 	side := styBorder.Render("│")
 	var b strings.Builder
@@ -196,7 +221,8 @@ func (m Model) listView(home string) string {
 // renderRow formats one conversation line, fit to exactly `width` columns so it
 // never wraps the pane. The title takes the remaining space; the project and
 // branch columns drop out on narrow panes. The selected row gets a full-width
-// teal highlight; others get per-column teal accents.
+// per-tool highlight (Claude=orange, Codex=teal); others get a per-tool
+// tool-name accent.
 func (m Model) renderRow(c model.Conversation, home string, selected bool, width int) string {
 	marker := "  "
 	if selected {
@@ -239,11 +265,11 @@ func (m Model) renderRow(c model.Conversation, home string, selected bool, width
 			p.WriteString(padTrunc(c.Branch, wBranch) + "  ")
 		}
 		p.WriteString(title)
-		return stySelected.Render(padTrunc(p.String(), width))
+		return selStyle(c.Tool).Render(padTrunc(p.String(), width))
 	}
 
 	var b strings.Builder
-	b.WriteString(marker + styTool.Render(tool) + "  ")
+	b.WriteString(marker + toolStyle(c.Tool).Render(tool) + "  ")
 	if wProj > 0 {
 		b.WriteString(styProj.Render(padTrunc(shortenPath(c.Cwd, home), wProj)) + "  ")
 	}
@@ -271,7 +297,7 @@ func (m Model) previewLines(home string, w, height int) []string {
 	var lines []string
 	if c := m.Current(); c != nil {
 		lines = append(lines, wrap(fmt.Sprintf("%s · %s · %s",
-			c.Tool.String(), c.Cwd, humanizeAge(c.Modified, time.Now())), styPrevHdr)...)
+			c.Tool.String(), c.Cwd, humanizeAge(c.Modified, time.Now())), toolStyle(c.Tool))...)
 		if _, err := os.Stat(c.Cwd); err != nil {
 			lines = append(lines, wrap("⚠ path missing", styWarn)...)
 		}
