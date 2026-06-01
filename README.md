@@ -11,7 +11,7 @@ Both CLIs store their history centrally, but each one's built-in picker only sho
 Requires **Go 1.26+** and the `claude` and/or `codex` CLI already installed. macOS and Linux only.
 
 ```sh
-go install github.com/mohammedamarnah/carryon@latest   # or @v1.0.0 to pin a release
+go install github.com/mohammedamarnah/carryon@latest
 ```
 
 This puts `carryon` on your `PATH` (in `$(go env GOBIN)`, or `$(go env GOPATH)/bin`) — make sure that directory is on your `PATH`.
