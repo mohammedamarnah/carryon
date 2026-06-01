@@ -105,14 +105,8 @@ var (
 	styWarn     = lipgloss.NewStyle().Foreground(colWarn).Bold(true)
 	styFooter   = lipgloss.NewStyle().Foreground(colMuted)
 
-	styFrame = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colTeal).
-			Padding(0, 1)
-	styRightPane = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder(), false, false, false, true).
-			BorderForeground(colTealDim).
-			PaddingLeft(1)
+	stySep    = lipgloss.NewStyle().Foreground(colTealDim)
+	styBorder = lipgloss.NewStyle().Foreground(colTeal)
 )
 
 func (m Model) View() string {
@@ -121,26 +115,56 @@ func (m Model) View() string {
 	}
 	home, _ := os.UserHomeDir()
 
+	inner := m.innerWidth()
+
 	cwd := ""
 	if m.cwdOnly {
 		cwd = " · cwd-only"
 	}
-	header := styTitle.Render("carryon") + "  " +
-		styCount.Render(fmt.Sprintf("%d conversations · tool: %s%s", len(m.filtered), m.toolLabel(), cwd))
+	count := trunc(fmt.Sprintf("%d conversations · tool: %s%s", len(m.filtered), m.toolLabel(), cwd), inner-9)
+	header := styTitle.Render("carryon") + "  " + styCount.Render(count)
 	if m.searching {
-		header += "\n" + stySearch.Render("search: "+m.search+"▏")
+		header += "\n" + stySearch.Render(trunc("search: "+m.search+"▏", inner))
 	}
 
+	// Zip the two panes line-by-line at exact widths and height, with a manual
+	// teal separator. This avoids lipgloss's border/padding width ambiguities,
+	// guaranteeing every body line is exactly innerWidth and there are exactly
+	// bodyH of them — so nothing overflows the frame or the terminal.
 	bodyH := m.bodyHeight()
-	left := lipgloss.NewStyle().Width(m.leftWidth()).Height(bodyH).Render(m.listView(home))
-	preview := clampLines(m.previewHeader(home)+"\n\n"+styPrev.Render(m.previewText), bodyH)
-	right := styRightPane.Width(m.rightWidth()).Height(bodyH).Render(preview)
-	body := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	leftLines := fitBlock(strings.Split(m.listView(home), "\n"), m.leftWidth(), bodyH)
+	rightLines := m.previewLines(home, m.rightWidth(), bodyH)
+	sep := stySep.Render("│") + " "
 
-	footer := styFooter.Render("↑↓ move · ↵ resume · / search · t tool · . cwd-only · q quit")
+	footer := styFooter.Render(trunc("↑↓ move · ↵ resume · / search · t tool · . cwd-only · q quit", inner))
 
-	content := lipgloss.JoinVertical(lipgloss.Left, header, "", body, "", footer)
-	return styFrame.Width(m.innerWidth()).Render(content)
+	var content []string
+	content = append(content, strings.Split(header, "\n")...)
+	content = append(content, "")
+	for i := 0; i < bodyH; i++ {
+		content = append(content, leftLines[i]+sep+rightLines[i])
+	}
+	content = append(content, "", footer)
+	return tealFrame(content, inner)
+}
+
+// tealFrame draws a rounded teal border around the content lines, padding each
+// line to innerWidth. The result is exactly innerWidth+4 columns wide and
+// len(lines)+2 rows tall — no lipgloss border box-model guesswork.
+func tealFrame(lines []string, innerWidth int) string {
+	bar := strings.Repeat("─", innerWidth+2)
+	side := styBorder.Render("│")
+	var b strings.Builder
+	b.WriteString(styBorder.Render("╭"+bar+"╮") + "\n")
+	for _, ln := range lines {
+		pad := innerWidth - lipgloss.Width(ln)
+		if pad < 0 {
+			pad = 0
+		}
+		b.WriteString(side + " " + ln + strings.Repeat(" ", pad) + " " + side + "\n")
+	}
+	b.WriteString(styBorder.Render("╰" + bar + "╯"))
+	return b.String()
 }
 
 // listView renders only the rows visible in the current viewport window,
@@ -165,54 +189,93 @@ func (m Model) listView(home string) string {
 	return b.String()
 }
 
-// renderRow formats one conversation line, fit to width. The selected row gets a
-// full-width teal highlight; others get per-column teal accents.
+// renderRow formats one conversation line, fit to exactly `width` columns so it
+// never wraps the pane. The title takes the remaining space; the project and
+// branch columns drop out on narrow panes. The selected row gets a full-width
+// teal highlight; others get per-column teal accents.
 func (m Model) renderRow(c model.Conversation, home string, selected bool, width int) string {
-	const (
-		wTool   = 6
-		wProj   = 16
-		wAge    = 4
-		wBranch = 8
-		// marker(2) + 4 two-space gaps + the fixed columns
-		fixed = 2 + wTool + 2 + wProj + 2 + wAge + 2 + wBranch + 2
-	)
-	titleW := width - fixed
-	if titleW < 4 {
-		titleW = 4
-	}
 	marker := "  "
 	if selected {
 		marker = "› "
 	}
+
+	const wTool, wAge = 6, 4
+	wProj, wBranch := 16, 8
+	switch {
+	case width < 44:
+		wProj, wBranch = 0, 0
+	case width < 60:
+		wProj, wBranch = 12, 0
+	}
+
+	used := 2 + wTool + 2 + wAge + 2 // marker + tool + gap + age + gap
+	if wProj > 0 {
+		used += wProj + 2
+	}
+	if wBranch > 0 {
+		used += wBranch + 2
+	}
+	titleW := width - used
+	if titleW < 1 {
+		titleW = 1
+	}
+
 	tool := padTrunc(c.Tool.String(), wTool)
-	proj := padTrunc(shortenPath(c.Cwd, home), wProj)
 	age := padTrunc(humanizeAge(c.Modified, time.Now()), wAge)
-	branch := padTrunc(c.Branch, wBranch)
 	title := padTrunc(c.Title, titleW)
 
 	if selected {
-		plain := marker + tool + "  " + proj + "  " + age + "  " + branch + "  " + title
-		return stySelected.Render(padTrunc(plain, width))
+		var p strings.Builder
+		p.WriteString(marker + tool + "  ")
+		if wProj > 0 {
+			p.WriteString(padTrunc(shortenPath(c.Cwd, home), wProj) + "  ")
+		}
+		p.WriteString(age + "  ")
+		if wBranch > 0 {
+			p.WriteString(padTrunc(c.Branch, wBranch) + "  ")
+		}
+		p.WriteString(title)
+		return stySelected.Render(padTrunc(p.String(), width))
 	}
-	return marker +
-		styTool.Render(tool) + "  " +
-		styProj.Render(proj) + "  " +
-		styAge.Render(age) + "  " +
-		styBranch.Render(branch) + "  " +
-		styRowTitle.Render(title)
+
+	var b strings.Builder
+	b.WriteString(marker + styTool.Render(tool) + "  ")
+	if wProj > 0 {
+		b.WriteString(styProj.Render(padTrunc(shortenPath(c.Cwd, home), wProj)) + "  ")
+	}
+	b.WriteString(styAge.Render(age) + "  ")
+	if wBranch > 0 {
+		b.WriteString(styBranch.Render(padTrunc(c.Branch, wBranch)) + "  ")
+	}
+	b.WriteString(styRowTitle.Render(title))
+	row := b.String()
+	if lipgloss.Width(row) > width { // last-resort guard against wrapping
+		return styRowTitle.Render(padTrunc(marker+c.Title, width))
+	}
+	return row
 }
 
-func (m Model) previewHeader(home string) string {
-	c := m.Current()
-	if c == nil {
-		return ""
+// previewLines renders the highlighted conversation's transcript as exactly
+// `height` lines, each no wider than `w` columns, so it can never overflow the
+// frame or bleed into the list pane. Each piece is wrapped from PLAIN text in a
+// single styled Render — wrapping already-styled (ANSI) text mis-measures width.
+func (m Model) previewLines(home string, w, height int) []string {
+	wrap := func(s string, st lipgloss.Style) []string {
+		return strings.Split(st.Width(w).Render(s), "\n")
 	}
-	hdr := styPrevHdr.Render(fmt.Sprintf("%s · %s · %s",
-		c.Tool.String(), c.Cwd, humanizeAge(c.Modified, time.Now())))
-	if _, err := os.Stat(c.Cwd); err != nil {
-		hdr += styWarn.Render("  ⚠ path missing")
+
+	var lines []string
+	if c := m.Current(); c != nil {
+		lines = append(lines, wrap(fmt.Sprintf("%s · %s · %s",
+			c.Tool.String(), c.Cwd, humanizeAge(c.Modified, time.Now())), styPrevHdr)...)
+		if _, err := os.Stat(c.Cwd); err != nil {
+			lines = append(lines, wrap("⚠ path missing", styWarn)...)
+		}
+		lines = append(lines, "")
 	}
-	return hdr
+	lines = append(lines, wrap(m.previewText, styPrev)...)
+
+	return fitBlock(lines, w, height)
 }
 
 // --- layout sizing (accounts for the rounded frame) ---
@@ -296,6 +359,22 @@ func (m Model) windowBounds() (int, int) {
 	return start, end
 }
 
+// trunc shortens s to at most w columns (rune-approximate) with an ellipsis,
+// without padding. It assumes s has no ANSI escapes.
+func trunc(s string, w int) string {
+	if w <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= w {
+		return s
+	}
+	if w == 1 {
+		return "…"
+	}
+	return string(r[:w-1]) + "…"
+}
+
 // padTrunc fits s to exactly w columns (rune-approximate), truncating with an
 // ellipsis or right-padding with spaces.
 func padTrunc(s string, w int) string {
@@ -312,16 +391,22 @@ func padTrunc(s string, w int) string {
 	return s + strings.Repeat(" ", w-len(r))
 }
 
-// clampLines keeps at most n lines of s.
-func clampLines(s string, n int) string {
-	if n < 1 {
-		n = 1
+// fitBlock returns exactly height lines, each padded with spaces to width.
+// Padding uses lipgloss.Width so ANSI-styled lines measure correctly; lines are
+// assumed to already be no wider than width.
+func fitBlock(lines []string, width, height int) []string {
+	out := make([]string, height)
+	for i := 0; i < height; i++ {
+		s := ""
+		if i < len(lines) {
+			s = lines[i]
+		}
+		if pad := width - lipgloss.Width(s); pad > 0 {
+			s += strings.Repeat(" ", pad)
+		}
+		out[i] = s
 	}
-	lines := strings.Split(s, "\n")
-	if len(lines) > n {
-		lines = lines[:n]
-	}
-	return strings.Join(lines, "\n")
+	return out
 }
 
 // Selected returns the chosen conversation, or nil if the user quit.
