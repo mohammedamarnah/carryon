@@ -36,6 +36,10 @@ type Model struct {
 	previewText string
 	selected    *model.Conversation
 	quitting    bool
+
+	deleteConv func(model.Conversation) error // nil disables deletion
+	confirming bool                           // awaiting y/n for a delete
+	status     string                         // one-shot message shown in the footer
 }
 
 // New builds the initial model. loadPreview is injected for testability.
@@ -48,6 +52,13 @@ func New(convs []model.Conversation, currentDir string, loadPreview func(model.C
 	}
 	m.recompute()
 	m.refreshPreview()
+	return m
+}
+
+// WithDelete enables the delete key, using fn to remove a conversation from
+// disk. Injected (like loadPreview) so tests never touch the filesystem.
+func (m Model) WithDelete(fn func(model.Conversation) error) Model {
+	m.deleteConv = fn
 	return m
 }
 
@@ -165,7 +176,15 @@ func (m Model) View() string {
 	rightLines := m.previewLines(home, m.rightWidth(), bodyH)
 	sep := stySep.Render("│") + " "
 
-	footer := styFooter.Render(trunc("↑↓ move · ↵ resume · / search · t tool · . cwd-only · q quit", inner))
+	footer := styFooter.Render(trunc(m.footerHelp(), inner))
+	switch {
+	case m.confirming:
+		if c := m.Current(); c != nil {
+			footer = styWarn.Render(trunc(fmt.Sprintf("delete %s conversation %q? y/N", c.Tool, c.Title), inner))
+		}
+	case m.status != "":
+		footer = styWarn.Render(trunc(m.status, inner))
+	}
 
 	var content []string
 	content = append(content, strings.Split(header, "\n")...)
@@ -175,6 +194,13 @@ func (m Model) View() string {
 	}
 	content = append(content, "", footer)
 	return drawFrame(content, inner)
+}
+
+func (m Model) footerHelp() string {
+	if m.deleteConv != nil {
+		return "↑↓ move · ↵ resume · / search · t tool · . cwd-only · d delete · q quit"
+	}
+	return "↑↓ move · ↵ resume · / search · t tool · . cwd-only · q quit"
 }
 
 // drawFrame draws a rounded border around the content lines, padding each
@@ -539,7 +565,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		var next tea.Model
 		var cmd tea.Cmd
-		if m.searching {
+		m.status = ""
+		if m.confirming {
+			next, cmd = m.updateConfirming(msg)
+		} else if m.searching {
 			next, cmd = m.updateSearching(msg)
 		} else {
 			next, cmd = m.updateBrowsing(msg)
@@ -579,8 +608,38 @@ func (m Model) updateSearching(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateConfirming handles the y/N prompt after "d". Anything but "y" cancels.
+func (m Model) updateConfirming(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.confirming = false
+	if msg.Type == tea.KeyCtrlC {
+		m.quitting = true
+		return m, tea.Quit
+	}
+	if msg.String() != "y" && msg.String() != "Y" {
+		return m, nil
+	}
+	if len(m.filtered) == 0 {
+		return m, nil
+	}
+	idx := m.filtered[m.cursor]
+	c := m.all[idx]
+	if err := m.deleteConv(c); err != nil {
+		m.status = "delete failed: " + err.Error()
+		return m, nil
+	}
+	m.all = append(m.all[:idx:idx], m.all[idx+1:]...)
+	m.recompute()
+	m.status = fmt.Sprintf("deleted %s conversation %q", c.Tool, c.Title)
+	return m, nil
+}
+
 func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "d":
+		if m.deleteConv != nil && len(m.filtered) > 0 {
+			m.confirming = true
+		}
+		return m, nil
 	case "q":
 		m.quitting = true
 		return m, tea.Quit

@@ -31,7 +31,7 @@ func main() {
 	}
 
 	p := tea.NewProgram(
-		tui.New(convs, currentDir, loadPreview),
+		tui.New(convs, currentDir, loadPreview).WithDelete(discovery.Delete),
 		tea.WithAltScreen(),
 	)
 	final, err := p.Run()

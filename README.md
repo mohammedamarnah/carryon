@@ -38,6 +38,7 @@ carryon
 | `t` | Cycle tool filter: all → claude → codex |
 | `.` | Toggle "current directory only" |
 | `↵` | Resume the highlighted conversation |
+| `d` then `y` | Delete the highlighted conversation from disk (any other key cancels) |
 | `q` / `esc` / `ctrl-c` | Quit |
 
 Selecting a conversation replaces `carryon` with a live `claude --resume <id>` or `codex resume <id>` session in the conversation's original project directory.
